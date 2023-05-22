@@ -1,0 +1,107 @@
+#!/bin/bash
+set -x
+
+# Liest die Konfigurationseinstellungen aus der config.ini-Datei
+config_file="config.ini"
+
+# Lese Konfigurationsvariablen aus der INI-Datei
+absolute_path=$(awk -F "=" '/absolute_path/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+checkup_dir=$(awk -F "=" '/checkup_dir/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+exclude_dirs=$(awk -F "=" '/exclude_dir/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+local_test_system=$(awk -F "=" '/local_test_system/ {print $2}' "$config_file")
+
+# Überprüfen, ob ClamAV installiert ist
+clamav_installed=$(command -v clamscan)
+
+if [ -z "$clamav_installed" ]; then
+  echo "ClamAV ist nicht installiert. Starte Installation..."
+  ./installClamAV.sh
+fi
+
+# Temporäre Datei erstellen, in die die Ergebnisse geschrieben werden
+tmpfile=$(mktemp)
+
+# HTML-Struktur für die Ausgabe
+echo "<table><thead><tr><th>Dateiname</th><th>Code anzeigen</th><th>Datei öffnen</th></tr></thead><tbody>" >> "$tmpfile"
+
+# Grep-Kommandos und deren Namen
+
+grep_commands=(
+   ["VariableAssignment"]='\$([a-zA-Z0-9]{1,15})([ ]{0})=([ ]{0})\$([a-zA-Z0-9]{1,15})\('
+   ["VariableAssignmentShort"]='\$([a-zA-Z0-9]{1,15})=\$([a-zA-Z0-9]{1,15})'
+   ["VariableAssignmentSpaces"]='\$([a-zA-Z0-9]{1,15})([ ]{0,2})=([ ]{0,2})\$([a-zA-Z0-9]{1,15})\('
+   ["FunctionExecution"]='(system|eval|exec|passthru|getcwd|shell_exec|phpinfo|chmod|mkdir|fopen|readfile|call_user_func|shell_exec|assert|create_function|getcwd|exec|lave|document_write)([ ]{0,2})\('
+   ["SuperglobalVariableExecution"]='(\$\_(POST|COOKIE|REQUEST|GET|SERVER)\[(.*){1,15}\]([ ]{0,1})\(([ ]{0,1})(\$\_(POST|COOKIE|REQUEST|GET|SERVER)))'
+   ["StringConcatenation"]='(chr\(([0-9]{1,3})\)\.)'
+   ["ErrorSuppressingExecution"]='(\@(die|extract|system|eval|exec|passthru|getcwd|mkdir|fopen|readfile|call_user_func|shell_exec|assert|create_function|file_get_contents|fopen|chmod|include))'
+   ["UnserializeExecution"]='((unserialize|eval|call_user_func|passthru|document_write|shell_exec|assert|create_function|getcwd|system|exec|lave|extract|openssl_decrypt|gzuncompress|str_rot13|unescape|base64_decode|strrev|edoced_46esab)([ ]{0,1})\(([ ]{0,4})\$\_(POST|REQUEST|SERVER|COOKIE|GET))'
+   ["EncryptionDecryptionFunctions"]='((openssl_decrypt|gzuncompress|str_rot13|chr\(ord|unescape|base64_decode|strrev|edoced_46esab)([ ]{0,2})\(([ ]{0,2}))'
+   ["EvalFunctions"]='((;|[ ]{0,2})(eval|call_user_func|passthru|document_write|shell_exec|assert|create_function|getcwd|system|exec|lave|extract)([ ]{0,2})\(([ ]{0,3})\$(\_|[a-zA-Z0-9]))|(array_diff_ukey([ ]{0,2})\(([ ]{0,2})\[([ ]{0,2})\$|array_diff_uassoc([ ]{0,2})\(([ ]{0,2})\[([ ]{0,2})\$)'
+   ["ExecutionFunctions"]='(eval|passthru|shell_exec|assert|create_function|getcwd|system|exec|lave|extract)([ ]{0,2})\(([ ]{0,2})(openssl_decrypt|gzuncompress|str_rot13|chr\(ord|unescape|base64_decode|strrev|edoced_46esab)'
+   ["StringConcatenationSpaces"]='("\ \.\ ")'
+   ["CommonMalwareKeywords"]='(%|)(torrent|warez|viagra|pills|traffic|f'
+   ["WgetCurlDecodingFunctions"]='(wget|curl|base64_decode|edoced_46esab|str_rot13|gzinflate|eval\(|passthru\(|exec\(|shell_exec\(|popen\(|proc_open\(|pcntl_exec\(|python_eval\(|create_function\(|r0nin|m0rtix|upl0ad|r57shell|cFaTaLisTiCz_Fx|Tukulesto|99shell|shellbot|phpshell|void\.ru|phpremoteview|directmail|bash_history|\.ru/|brute\s*force|multiviews|cwings|vandal|bitchx|eggdrop|guardservices|psybnc|dalnet|undernet|vulnscan|spymeta|raslan58|Webshell|@include "\\\\|@extract"'
+   ["PythonFile"]='\.(py|pyw)$'
+   ["PythonFileShebang"]='^#!.*\bpython'
+   ["PythonFileImport"]='import|def|class'
+   ["PythonFileMimeType"]='text/x-python'
+)
+
+# Ergebnisse der Grep-Befehle verarbeiten
+for grep_command_name in "${!grep_commands[@]}"; do
+  matches=$(grep "${grep_commands[$grep_command_name]}" "$absolute_path" -riE -C 5 --include=* --color)
+  if [ -n "$matches" ]; then
+    while IFS= read -r file; do
+      echo "<tr><td class='resultHeadline'>Potenzieller Exploit ($grep_command_name) gefunden: <br><a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
+      echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+      echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+    done <<< "$matches"
+  fi
+done
+
+# Sucht nach bekannten PHP-Shells
+shell_matches=$(grep '(c99|r57|cq99|liz0zim|kacak|zehir)' "$absolute_path" -riE --include=* --color)
+if [ -n "$shell_matches" ]; then
+  while IFS= read -r file; do
+    echo "<tr><td class='resultHeadline'>Potenzielle PHP-Shells gefunden: <br><a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
+    echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+    echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+  done <<< "$shell_matches"
+fi
+
+# Sucht nach Modifikationen in der .htaccess-Datei
+htaccess_matches=$(grep '(SetHandler|x-httpd-php)' "$absolute_path" -riE --include=.htaccess)
+if [ -n "$htaccess_matches" ]; then
+  while IFS= read -r file; do
+    echo "<tr><td class='resultHeadline'>Potenzielle Modifikationen in der .htaccess-Datei gefunden: <br><a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
+    echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+    echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+  done <<< "$htaccess_matches"
+fi
+
+# Python-Dateien finden
+python_files=$(find "$absolute_path" -type f -iname "*.py" ! -name "*dark0*")
+if [ -n "$python_files" ]; then
+  while IFS= read -r file; do
+    echo "<tr><td class='resultHeadline'>Python-Datei gefunden: <br><a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
+    echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+    echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+  done <<< "$python_files"
+fi
+
+# ClamAV-Ergebnisse verarbeiten
+if [ "$clamav_active" = "true" ]; then
+  clamscan_results=$(clamscan "$absolute_path" -r -i)
+  infected_files=$(echo "$clamscan_results" | grep -oP "(?<=^/).*(?=:.* FOUND$)")
+  for file in $infected_files; do
+    echo "<tr><td class='resultHeadline'>Potenzielle Malware gefunden: <br><a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
+    echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+    echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+  done
+fi
+
+# Schließt die Tabelle und verschiebt die temporäre Datei in den Checkup-Ordner im results-Unterordner mit der aktuellen Zeit als Dateiname
+echo "</tbody></table>" >> "$tmpfile"
+mv "$tmpfile" "$absolute_path/$checkup_dir/results/$(date +'%Y%m%d%H%M%S').html"
+
+exit 0

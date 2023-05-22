@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# ClamAV installieren
+echo "Installiere ClamAV..."
+brew install clamav
+
+# Erstelle das notwendige Verzeichnis für Logs
+echo "Erstelle Log-Verzeichnis..."
+sudo mkdir -p /usr/local/var/log/clamav
+sudo chown -R $(whoami) /usr/local/var/log/clamav
+
+# Konfigurationsdateien automatisch erstellen
+echo "Erstelle Konfigurationsdateien..."
+
+# freshclam.conf
+cat << EOF > /usr/local/etc/clamav/freshclam.conf
+DatabaseDirectory /usr/local/var/lib/clamav
+UpdateLogFile /usr/local/var/log/clamav/freshclam.log
+LogVerbose false
+LogSyslog false
+LogFacility LOG_LOCAL6
+LogTime true
+Foreground false
+Debug false
+MaxAttempts 5
+DatabaseMirror database.clamav.net
+DNSDatabaseInfo current.cvd.clamav.net
+EOF
+
+# clamd.conf
+cat << EOF > /usr/local/etc/clamav/clamd.conf
+LogFile /usr/local/var/log/clamav/clamd.log
+LogFileMaxSize 2M
+LogTime true
+LogClean false
+LogVerbose false
+DatabaseDirectory /usr/local/var/lib/clamav
+LocalSocket /usr/local/var/run/clamav/clamd.sock
+FixStaleSocket true
+ReadTimeout 180
+MaxConnectionQueueLength 30
+MaxThreads 50
+MaxRecursion 10
+MaxFiles 10000
+MaxEmbeddedPE 10M
+MaxHTMLNormalize 10M
+MaxHTMLNoTags 2M
+MaxScriptNormalize 5M
+MaxZipTypeRcg 1M
+ScanPE true
+ScanELF true
+DetectBrokenExecutables false
+ScanOLE2 true
+ScanMail true
+ScanArchive true
+ArchiveBlockEncrypted false
+EOF
+
+# Die Virendatenbank aktualisieren
+echo "Aktualisieren der ClamAV-Datenbank..."
+freshclam
+
+# Lesen des Pfades aus der Konfigurationsdatei
+echo "Lese Pfad aus der Konfigurationsdatei..."
+path=$(awk -F "=" '/absolute_path/ {print $2}' config.ini)
+echo "Gefundener Pfad: $path"
+
+# Befehl zum Überprüfen einer Datei
+echo "Sie können nun Dateien mit dem Befehl 'clamscan' überprüfen, z.B.:"
+echo "clamscan $path"

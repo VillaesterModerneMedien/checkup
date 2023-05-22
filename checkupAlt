@@ -1,0 +1,50 @@
+#!/bin/bash
+# set -x  # Debug-Modus aktivieren
+
+# Liest die Konfigurationseinstellungen aus der config.ini-Datei
+config_file="config.ini"
+
+# Lese Konfigurationsvariablen aus der INI-Datei
+absolute_path=$(awk -F "=" '/absolute_path/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+checkup_dir=$(awk -F "=" '/checkup_dir/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+exclude_dir=$(awk -F "=" '/exclude_dir/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+singledir_scan=$(awk -F "=" '/singledir_scan/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+
+# Lese Sploit-Patterns aus der INI-Datei
+sploitpattern=$(awk -F "=" '/sploitpattern/ {print $2}' "$config_file")
+jsploitpattern=$(awk -F "=" '/jsploitpattern/ {print $2}' "$config_file")
+pysploitpattern=$(awk -F "=" '/pysploitpattern/ {print $2}' "$config_file")
+local_test_system=$(awk -F "=" '/local_test_system/ {print $2}' "$config_file")
+
+# Echo der dir-Variablen
+echo "absolute_path: $absolute_path"
+echo "checkup_dir: $checkup_dir"
+echo "exclude_dir: $exclude_dir"
+echo "singledir_scan: $singledir_scan"
+
+# Echo der Sploit-Patterns
+echo "sploitpattern: $sploitpattern"
+echo "jsploitpattern: $jsploitpattern"
+echo "pysploitpattern: $pysploitpattern"
+
+# Erstellt eine temporäre Datei und fügt die erste Zeile mit dem aktuellen Datum und der Uhrzeit ein
+tmpfile=$(mktemp)
+echo "<table class='resultsTable'>" > "$tmpfile"
+echo "<thead><tr><th>Datei</th><th>Aktion</th></tr></thead><tbody>" >> "$tmpfile"
+
+echo "Matches: $matches"
+if [ -n "$matches" ]; then
+    echo "<tr><td class='resultHeadline'>Potenzieller Exploit ($matches) gefunden in:<br> <a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
+    echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+    if [ "$local_test_system" = "true" ]; then
+        echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+    else
+        echo "</tr>" >> "$tmpfile"
+    fi
+fi
+
+# Schließt die Tabelle und verschiebt die temporäre Datei in den Checkup-Ordner im results-Unterordner mit der aktuellen Zeit als Dateiname
+echo "</tbody></table>" >> "$tmpfile"
+mv "$tmpfile" "$absolute_path/$checkup_dir/results/$(date +'%Y%m%d%H%M%S').html"
+
+exit 0
