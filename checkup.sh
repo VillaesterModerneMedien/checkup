@@ -23,6 +23,8 @@ echo "<table class='resultsTable'>" > "$tmpfile"
 function search_files() {
     local directory="$1"
     local pattern="$2"
+    echo "directory: $directory"
+    echo "pattern: $pattern"
 
     find "$directory" -type f -print0 | while IFS= read -rd '' file; do
         if egrep -iq "$pattern" "$file"; then

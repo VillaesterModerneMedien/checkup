@@ -1,51 +1,109 @@
 #!/bin/bash
+# set -x  # Debug-Modus aktivieren
 
 # Liest die Konfigurationseinstellungen aus der config.ini-Datei
 config_file="config.ini"
-absolute_path=$(awk -F "=" '/absolute_path/ && !/^;/ {print $2}' "$config_file")
-checkup_dir=$(awk -F "=" '/checkup_dir/ && !/^;/ {print $2}' "$config_file")
-exclude_dir=$(awk -F "=" '/exclude_dir/ && !/^;/ {print $2}' "$config_file")
-singledir_scan=$(awk -F "=" '/singledir_scan/ && !/^;/ {print $2}' "$config_file")
+
+# Lese Konfigurationsvariablen aus der INI-Datei
+absolute_path=$(awk -F "=" '/absolute_path/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+checkup_dir=$(awk -F "=" '/checkup_dir/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+exclude_dir=$(awk -F "=" '/exclude_dir/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+singledir_scan=$(awk -F "=" '/singledir_scan/ && !/^;/ {print $2}' "$config_file" | awk '{$1=$1;print}')
+
+# Lese Sploit-Patterns aus der INI-Datei
+sploitpattern=$(awk -F "=" '/sploitpattern/ {print $2}' "$config_file")
+jsploitpattern=$(awk -F "=" '/jsploitpattern/ {print $2}' "$config_file")
+pysploitpattern=$(awk -F "=" '/pysploitpattern/ {print $2}' "$config_file")
+local_test_system=$(awk -F "=" '/local_test_system/ {print $2}' "$config_file")
 
 # Echo der dir-Variablen
 echo "absolute_path: $absolute_path"
 echo "checkup_dir: $checkup_dir"
 echo "exclude_dir: $exclude_dir"
 echo "singledir_scan: $singledir_scan"
-echo "singledir_scan: $absolute_path/$singledir_scan"
+
+# Echo der Sploit-Patterns
+echo "sploitpattern: $sploitpattern"
+echo "jsploitpattern: $jsploitpattern"
+echo "pysploitpattern: $pysploitpattern"
 
 # Erstellt eine temporäre Datei und fügt die erste Zeile mit dem aktuellen Datum und der Uhrzeit ein
 tmpfile=$(mktemp)
 echo "<table class='resultsTable'>" > "$tmpfile"
-#echo "<thead><tr><th>Datei</th><th>Aktion</th></tr></thead><tbody>" >> "$tmpfile"
+echo "<thead><tr><th>Datei</th><th>Aktion</th></tr></thead><tbody>" >> "$tmpfile"
+
+# Funktion zum Überprüfen einer einzelnen Datei
+function check_file() {
+    local file="$1"
+    local pattern="$2"
+    local file_extension="${file##*.}"
+    local file_mime_type=$(file --mime-type -b "$file")
+    local shebang=$(head -n 1 "$file")
+
+    echo "------------------------"
+    echo "Datei: $file"
+    echo "Pattern: $pattern"
+    echo "File Extension: $file_extension"
+    echo "File Mime Type: $file_mime_type"
+    echo "Shebang: $shebang"
+    echo "------------------------"
+    echo "  "
+
+    local matches=""
+    if [[ ("$file_extension" == "php" && "$pattern" == *"$sploitpattern"*) ||
+          ("$file_extension" == "js" && "$pattern" == *"$jsploitpattern"*) ||
+          ("$file_extension" == "py" && "$pattern" == *"$pysploitpattern"*) ||
+          ("$file_mime_type" == "text/x-python" && "$pattern" == *"$pysploitpattern"*) ||
+          ("$shebang" == *"/usr/bin/env python"* && "$pattern" == *"$pysploitpattern"*) ||
+          ("$shebang" == *"#!"* && "$pattern" == *"$pysploitpattern"*) ]]; then
+        matches=$(egrep -io "$pattern" "$file")
+    fi
+
+    echo "Matches: $matches"
+    if [ -n "$matches" ]; then
+        echo "<tr><td class='resultHeadline'>Potenzieller Exploit ($matches) gefunden in:<br> <a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
+        echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+        if [ "$local_test_system" = "true" ]; then
+            echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+        else
+            echo "</tr>" >> "$tmpfile"
+        fi
+    fi
+}
 
 # Funktion zum Durchsuchen von Dateien
 function search_files() {
     local directory="$1"
     local pattern="$2"
 
-    find "$directory" -type f -print0 | while IFS= read -rd '' file; do
-        if egrep -iq "$pattern" "$file"; then
-            echo "<tr><td class='resultHeadline'>Potenzieller Exploit gefunden in <a href=\"file://$file\">$file</a></td>" >> "$tmpfile"
-            echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td></tr>" >> "$tmpfile"
+    if [ -n "$singledir_scan" ]; then
+        # Scan nur in einem einzigen Verzeichnis
+        find "$directory" -type f -print0 | while IFS= read -r -d '' file; do
+            check_file "$file" "$pattern"
+        done
+    else
+        # Scan in allen Verzeichnissen außer den ausgeschlossenen Verzeichnissen
+        if [ -n "$exclude_dir" ]; then
+            local exclude_args=()
+            IFS=',' read -ra exclude_arr <<< "$exclude_dir"
+            for dir in "${exclude_arr[@]}"; do
+                exclude_args+=(-path "$absolute_path/$dir" -prune -o)
+            done
+
+            find "$directory" -type d \( "${exclude_args[@]}" -false \) -o -type f -print0 |
+            while IFS= read -r -d '' file; do
+                check_file "$file" "$pattern"
+            done
+        else
+            find "$directory" -type f -print0 | while IFS= read -r -d '' file; do
+                check_file "$file" "$pattern"
+            done
         fi
-    done
+    fi
 }
 
 # Durchsucht die Dateien basierend auf den Konfigurationseinstellungen
-if [ "$singledir_scan" != "" ]; then
-    # Scan nur in einem einzigen Verzeichnis
-    search_files "$absolute_path/$singledir_scan" "$sploitpattern"
-else
-    # Scan in allen Verzeichnissen außer den ausgeschlossenen Verzeichnissen
-    exclude_dirs=""
-    IFS=',' read -ra exclude_arr <<< "$exclude_dir"
-    for dir in "${exclude_arr[@]}"; do
-        exclude_dirs+="! -path \"$absolute_path/$dir\" "
-    done
-
-    search_files "$absolute_path/$checkup_dir" "$sploitpattern" $exclude_dirs
-fi
+search_files "$absolute_path" "$sploitpattern"
 
 # Schließt die Tabelle und verschiebt die temporäre Datei in den Checkup-Ordner im results-Unterordner mit der aktuellen Zeit als Dateiname
 echo "</tbody></table>" >> "$tmpfile"

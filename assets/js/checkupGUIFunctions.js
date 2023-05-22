@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             backdrop.classList.remove('show');
             backdrop.classList.add('hide');
+            window.location.reload();
         };
         xhr.onerror = function() {
             alert('Fehler beim Starten des Scans');

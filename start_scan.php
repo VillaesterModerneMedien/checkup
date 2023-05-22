@@ -23,17 +23,22 @@
     $absolute_path = $config['absolute_path'];
     $checkup_script_path = "./$checkup_dir/checkup";
 
-    $output = shell_exec("la > output.log 2> error.log");
-
+    //$test = exec('echo $PATH;');
+    $output = shell_exec("source checkup 2> error.log");
+    $errorContent = file_get_contents('error.log');
 
     echo '<pre>';
     var_dump($output);
     echo '</pre>';
 
+    echo '<pre>';
+    var_dump($errorContent);
+    echo '</pre>';
+
     if ($output === null) {
         http_response_code(500);
         echo "Fehler beim Ausführen des Skripts.\n";
-        $errorContent = file_get_contents('error.log');
+
         if ($errorContent !== false) {
             echo "Fehlerdetails: \n" . $errorContent;
         }
