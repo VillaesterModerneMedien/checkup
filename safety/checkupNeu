@@ -1,0 +1,144 @@
+#!/bin/bash
+set -x
+
+# Liest die Konfigurationseinstellungen aus der config.ini-Datei
+config_file="config.ini"
+
+# Lese Konfigurationsvariablen aus der INI-Datei
+read_config_variable() {
+  awk -F "=" -v var_name="$1" '$1 == var_name {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' "$config_file"
+}
+
+# Lese die grep_commands aus der INI-Datei
+read_grep_commands() {
+  awk -F "=" '/\[grep_commands\]/ {flag=1; next} /^\[.*\]/ {flag=0} flag && NF {gsub(/^[ \t]+|[ \t]+$/, "", $0); print}' "$config_file"
+}
+
+# Konfigurationsvariablen laden
+absolute_path=$(read_config_variable "absolute_path")
+checkup_dir=$(read_config_variable "checkup_dir")
+exclude_dirs=$(read_config_variable "exclude_dir")
+local_test_system=$(read_config_variable "local_test_system")
+
+# grep_commands laden
+declare -A grep_commands
+while IFS== read -r key value; do
+  grep_commands["$key"]="$value"
+done < <(read_grep_commands)
+
+echo "absolute_path: $absolute_path"
+
+# Überprüfen, ob ClamAV installiert ist
+clamav_installed=$(command -v clamscan)
+
+if [ -z "$clamav_installed" ]; then
+  echo "ClamAV ist nicht installiert. Starte Installation..."
+  ./installClamAV.sh
+fi
+
+# Temporäre Datei erstellen, in die die Ergebnisse geschrieben werden
+tmpfile=$(mktemp)
+
+# HTML-Struktur für die Ausgabe
+echo "<table><thead><tr><th>Dateiname</th><th>Code anzeigen</th><th>Datei öffnen</th></tr></thead><tbody>" >> "$tmpfile"
+
+# Ergebnisse der Grep-Befehle verarbeiten
+process_grep_results() {
+  local grep_command_name="$1"
+  local regex="${grep_commands[$grep_command_name]}"
+  local matches=$(grep "$regex" "$absolute_path" -riE -C 5 --include=* --color)
+  if [ -n "$matches" ]; then
+    while IFS= read -r file; do
+      filepath=$(dirname "$file")
+      filename=$(basename "$file")
+      echo "<tr><td class='resultHeadline'>Potenzieller Exploit ($grep_command_name) gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+      echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+      echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+    done <<< "$matches"
+  fi
+}
+
+# Verarbeitung der Grep-Ergebnisse
+for grep_command_name in "${!grep_commands[@]}"; do
+  process_grep_results "$grep_command_name"
+done
+
+# Sucht nach bekannten PHP-Shells
+process_shell_matches() {
+  local shell_matches=$(grep '(c99|r57|cq99|liz0zim|kacak|zehir)' "$absolute_path" -riE --include=* --color)
+  if [ -n "$shell_matches" ]; then
+    while IFS= read -r file; do
+      filepath=$(dirname "$file")
+      filename=$(basename "$file")
+      echo "<tr><td class='resultHeadline'>Potenzielle PHP-Shells gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+      echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+      echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+    done <<< "$shell_matches"
+  fi
+}
+
+process_shell_matches
+
+# Sucht nach Modifikationen in der .htaccess-Datei
+process_htaccess_matches() {
+  local htaccess_matches=$(grep '(SetHandler|x-httpd-php)' "$absolute_path" -riE --include=.htaccess)
+  if [ -n "$htaccess_matches" ]; then
+    while IFS= read -r file; do
+      filepath=$(dirname "$file")
+      filename=$(basename "$file")
+      echo "<tr><td class='resultHeadline'>Potenzielle Modifikationen in der .htaccess-Datei gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+      echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+      echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+    done <<< "$htaccess_matches"
+  fi
+}
+
+process_htaccess_matches
+
+# Python-Dateien finden
+process_python_files() {
+  local python_files=$(find "$absolute_path" -type f -iname "*.py" ! -name "*dark0*")
+  if [ -n "$python_files" ]; then
+    while IFS= read -r file; do
+      filepath=$(dirname "$file")
+      filename=$(basename "$file")
+      exclude=false
+      for exclude_dir in $(echo "$exclude_dirs" | tr ',' ' '); do
+        if [[ "$filepath" == *"/$exclude_dir/"* ]]; then
+          exclude=true
+          break
+        fi
+      done
+      if [ "$exclude" = false ]; then
+        echo "<tr><td class='resultHeadline'>Python-Datei gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+        echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+        echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+      fi
+    done <<< "$python_files"
+  fi
+}
+
+process_python_files
+
+# ClamAV-Ergebnisse verarbeiten
+process_clamav_results() {
+  if [ "$clamav_active" = "true" ]; then
+    clamscan_results=$(clamscan "$absolute_path" -r -i)
+    infected_files=$(echo "$clamscan_results" | grep -oP "(?<=^/).*(?=:.* FOUND$)")
+    for file in $infected_files; do
+      filepath=$(dirname "$file")
+      filename=$(basename "$file")
+      echo "<tr><td class='resultHeadline'>Potenzielle Malware gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+      echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+      echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+    done
+  fi
+}
+
+process_clamav_results
+
+# Schließt die Tabelle und verschiebt die temporäre Datei in den Checkup-Ordner im results-Unterordner mit der aktuellen Zeit als Dateiname
+echo "</tbody></table>" >> "$tmpfile"
+mv "$tmpfile" "$absolute_path/$checkup_dir/results/$(date +'%Y%m%d%H%M%S').html"
+
+exit 0

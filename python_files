@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Funktion zur Verarbeitung der Python-Dateien
+process_python_files() {
+  local exclude_dirs="$1"
+  local python_files=$(find "$absolute_path" -type f -iname "*.py" ! -name "*dark0*")
+  if [ -n "$python_files" ]; then
+    while IFS= read -r file; do
+      local filepath=$(dirname "$file")
+      local filename=$(basename "$file")
+      if ! is_excluded_directory "$filepath" "$exclude_dirs"; then
+        echo "<tr><td class='resultHeadline'>Python-Datei gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+        echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+        echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+      fi
+    done <<< "$python_files"
+  fi
+}

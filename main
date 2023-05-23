@@ -1,0 +1,73 @@
+#!/bin/bash
+set -x
+
+# Liest die Konfigurationseinstellungen aus der config.ini-Datei
+config_file="config.ini"
+
+# Lese Konfigurationsvariablen aus der INI-Datei
+read_config_variable() {
+  awk -F "=" -v var_name="$1" '$1 == var_name {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' "$config_file"
+}
+
+# Lese die grep_commands aus der INI-Datei
+read_grep_commands() {
+  awk -F "=" '/\[grep_commands\]/ {flag=1; next} /^\[.*\]/ {flag=0} flag && NF {gsub(/^[ \t]+|[ \t]+$/, "", $0); print}' "$config_file"
+}
+
+# Funktion zur Überprüfung, ob ein Verzeichnis ausgeschlossen werden soll
+is_excluded_directory() {
+  local directory="$1"
+  local exclude_dirs="$2"
+  for exclude_dir in $(echo "$exclude_dirs" | tr ',' ' '); do
+    if [[ "$directory" == *"/$exclude_dir/"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Konfigurationsvariablen laden
+absolute_path=$(read_config_variable "absolute_path")
+checkup_dir=$(read_config_variable "checkup_dir")
+exclude_dirs=$(read_config_variable "exclude_dir")
+local_test_system=$(read_config_variable "local_test_system")
+
+# grep_commands laden
+declare grep_commands
+while IFS== read -r key value; do
+  grep_commands["$key"]="$value"
+done < <(read_grep_commands)
+
+# Temporäre Datei erstellen, in die die Ergebnisse geschrieben werden
+tmpfile=$(mktemp)
+
+# HTML-Struktur für die Ausgabe
+echo "<table><thead><tr><th>Dateiname</th><th>Code anzeigen</th><th>Datei öffnen</th></tr></thead><tbody>" >> "$tmpfile"
+
+# Modul "grep_results" aufrufen und Funktion ausführen
+source grep_results
+for grep_command_name in "${!grep_commands[@]}"; do
+  process_grep_results "$grep_command_name" "$exclude_dirs" "$tmpfile"
+done
+
+# Modul "shell_matches" aufrufen und Funktion ausführen
+# source shell_matches
+# process_shell_matches "$exclude_dirs"
+#
+## Modul "htaccess_matches" aufrufen und Funktion ausführen
+#source htaccess_matches
+#process_htaccess_matches "$exclude_dirs"
+#
+## Modul "python_files" aufrufen und Funktion ausführen
+#source python_files
+#process_python_files "$exclude_dirs"
+#
+## Modul "clamav_results" aufrufen und Funktion ausführen
+#source clamav_results
+#process_clamav_results "$exclude_dirs"
+
+# Schließt die Tabelle und verschiebt die temporäre Datei in den Checkup-Ordner im results-Unterordner mit der aktuellen Zeit als Dateiname
+echo "</tbody></table>" >> "$tmpfile"
+mv "$tmpfile" "$absolute_path/$checkup_dir/results/$(date +'%Y%m%d%H%M%S').html"
+
+exit 0

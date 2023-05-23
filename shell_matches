@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Funktion zur Verarbeitung der Shell-Matches
+process_shell_matches() {
+  local exclude_dirs="$1"
+  echo "exclude_dirs: $exclude_dirs"
+  local shell_matches=$(grep '(c99|r57|cq99|liz0zim|kacak|zehir)' "$absolute_path" -riE --include=* --color)
+  if [ -n "$shell_matches" ]; then
+    while IFS= read -r file; do
+      local filepath=$(dirname "$file")
+      local filename=$(basename "$file")
+      if ! is_excluded_directory "$filepath" "$exclude_dirs"; then
+        echo "<tr><td class='resultHeadline'>Potenzielle PHP-Shells gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+        echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+        echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+      fi
+    done <<< "$shell_matches"
+  fi
+}

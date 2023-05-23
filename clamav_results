@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Funktion zur Verarbeitung der ClamAV-Ergebnisse
+process_clamav_results() {
+  local exclude_dirs="$1"
+  if [ "$clamav_active" = "true" ]; then
+    local clamscan_results=$(clamscan "$absolute_path" -r -i)
+    local infected_files=$(echo "$clamscan_results" | grep -oP "(?<=^/).*(?=:.* FOUND$)")
+    for file in $infected_files; do
+      local filepath=$(dirname "$file")
+      local filename=$(basename "$file")
+      if ! is_excluded_directory "$filepath" "$exclude_dirs"; then
+        echo "<tr><td class='resultHeadline'>Potenzielle Malware gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+        echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+        echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+      fi
+    done
+  fi
+}

@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Funktion zur Verarbeitung der .htaccess-Matches
+process_htaccess_matches() {
+  local exclude_dirs="$1"
+  local htaccess_matches=$(grep '(SetHandler|x-httpd-php)' "$absolute_path" -riE --include=.htaccess)
+  if [ -n "$htaccess_matches" ]; then
+    while IFS= read -r file; do
+      local filepath=$(dirname "$file")
+      local filename=$(basename "$file")
+      if ! is_excluded_directory "$filepath" "$exclude_dirs"; then
+        echo "<tr><td class='resultHeadline'>Potenzielle Modifikationen in der .htaccess-Datei gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+        echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+        echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+      fi
+    done <<< "$htaccess_matches"
+  fi
+}
