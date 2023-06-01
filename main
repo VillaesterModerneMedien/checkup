@@ -46,7 +46,7 @@ tmpfile=$(mktemp)
 echo "<table><thead><tr><th>Dateiname</th><th>Code anzeigen</th><th>Datei öffnen</th></tr></thead><tbody>" >> "$tmpfile"
 
 # Modul "grep_results" aufrufen und Funktion ausführen
-source grep_results
+source ./modules/grep_results
 for grep_command_name in "${!grep_commands[@]}"; do
   grep_command_value="${grep_commands[$grep_command_name]}"
   #echo "grep_command_name: $grep_command_name"
