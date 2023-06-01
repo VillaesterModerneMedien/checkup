@@ -1,6 +1,6 @@
 #!/usr/local/bin/bash
 
-set -x
+#set -x
 
 # Liest die Konfigurationseinstellungen aus der config.ini-Datei
 config_file="config.ini"
@@ -47,8 +47,11 @@ echo "<table><thead><tr><th>Dateiname</th><th>Code anzeigen</th><th>Datei öffne
 
 # Modul "grep_results" aufrufen und Funktion ausführen
 source grep_results
-for grep_command_name in "${!grep_commands[@]}"; do"
-  process_grep_results "$grep_command_name" "$exclude_dirs" "$tmpfile" "${grep_commands[$grep_command_name]}"
+for grep_command_name in "${!grep_commands[@]}"; do
+  grep_command_value="${grep_commands[$grep_command_name]}"
+  #echo "grep_command_name: $grep_command_name"
+  #echo "grep_command_value: $grep_command_value"
+  process_grep_results "$grep_command_name" "$exclude_dirs" "$tmpfile" "$grep_command_value"
 done
 
 # Modul "shell_matches" aufrufen und Funktion ausführen
