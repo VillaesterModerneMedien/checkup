@@ -6,7 +6,29 @@ process_grep_results() {
   local regex="${grep_commands[$grep_command_name]}"
   local exclude_dirs="$2"
   local tmpfile="$3"  # Füge die Variable tmpfile hinzu
+  local grep_command_value="$4"  # Füge die Variable grep_command_value hinzu
 
-  echo "regex: $regex"
+
+  echo "exclude_dirs: $exclude_dirs"
+  for dir in $absolute_path/*; do
+
+    echo "dir: $dir"
+    if [[ ! " ${exclude_dirs[@]} " =~ " ${dir##*/} " ]]; then
+      local matches=$(grep "$regex" "$dir" -riE -l --include=* --exclude-dir=*)
+
+
+      if [ -z "$matches" ]; then
+        while IFS= read -r file; do
+          local filepath=$(dirname "$file")
+          local filename=$(basename "$file")
+          echo "matches____: $matches"
+          echo "file____: $file"
+
+          echo "<tr><td class='resultHeadline'>Potenzieller Exploit ($grep_command_name) gefunden: <br><a href=\"file://$filepath\">$filename</a></td>" >> "$tmpfile"
+          echo "<td><button class='btn-primary btnCodeview'><i class='bi bi-eye'></i> Code anzeigen</button></td>" >> "$tmpfile"
+          echo "<td><button class='btn-secondary openFile'>Open File</button></td></tr>" >> "$tmpfile"
+        done <<< "$matches"
+      fi
+    fi
   done
 }
